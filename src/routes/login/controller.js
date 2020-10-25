@@ -1,38 +1,27 @@
-const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const { Users } = require('../../models');
+const Login = require('../../services/login');
+const logins = new Login(Users);
+
 
 const login = async (req,res,next) => {
-  console.log("login in");
-  const { id, password } = req.body;
-  const cryptoSecret = req.app.get('crypto-secret');
   const jwtSecret = req.app.get('jwt-secret');
-  const decode = crypto.createDecipher('aes-256-cbc',cryptoSecret);
+  const cryptoSecret = req.app.get('crypto-secret');
+  const { id, password } = req.body;
   try {
-    const user = await Users.findOne({ //유저 찾기
-      where: {id}
+    const existing_pwd = await logins.isMember(id);         //기존 비밀번호 가져오기
+    await logins.doesItMatch(password,existing_pwd,cryptoSecret);   //비밀번호 비교
+    const accessToken = await logins.tokenIssue(id,jwtSecret);        //토큰 발급
+    res.status(200).json({      //로그인 성공함
+      accessToken
     });
-    let decodeResult = decode.update(user.password,'base64','utf8')
-                       + decode.final('utf8');// 요청받은 비번 해독
-    if(decodeResult === password) { // 비번 비교
-      const accessToken = await jwt.sign({  //accessToken 발급
-        id: user.id,
-      }, jwtSecret, {
-        expiresIn: '15m'
-      });
-      res.status(200).json({  //로그인 성공함
-        accessToken,
-      });
-    }
-    else {
-      res.status(406);  //비밀번호 틀림
-    }
   }
   catch(err) {
-    res.status(404);//유저 존재하지 않음.
+    res.status(err.status).send({     //로그인 실패
+      message: err.message
+    });
   }
 }
-const refresh = async (req,res,next) => {
+/*const refresh = async (req,res,next) => {
   const jwtSecret = req.app.get('jwt-secret');
   const { id } = req.decoded;
   try {
@@ -52,43 +41,26 @@ const refresh = async (req,res,next) => {
   }
 
 }
-
+*/
 const password = async (req,res,next) => {
+  const cryptoSecret = req.app.get('crypto-secret');
   const { oldPassword,newPassword } = req.body;
   const { id } = req.decoded;
-  const cryptoSecret = req.app.get('crypto-secret');
-  const cipher = crypto.createCipher('aes-256-cbc', cryptoSecret);
-  const decode = crypto.createDecipher('aes-256-cbc',cryptoSecret);
   try {
-    const user = await Users.findOne({ //유저 찾기
-      where: { id }
-    });
-    let decodeResult = decode.update(user.password,'base64','utf8') // 요청받은 비번 해독
-                       + decode.final('utf8');
-    if(oldPassword === decodeResult) {  //비번비교
-      let password = cipher.update(newPassword, 'utf8', 'base64') //새로운 비번 암호화
-                   + cipher.final('base64');
-      await Users.update({
-        password,
-      },{
-        where: { id }
-      });
-      res.status(200).end();  //비번 변경 성공
-    }
-    else {
-      res.status(403).json({ // 비밀번호 일치하지 않음 //메세지 지우기
-        "message":"Password Mismatch"
-      });
-    }
-  } catch(err) {
-    res.status(401).json({  //유저를 찾을 수 없음 //메세지 지우기
-      "message":"user를 찾을 수 없음"
+    const existing_pwd = await logins.isMember(id);           //기존 비밀번호 가져오기
+    await logins.doesItMatch(oldPassword,existing_pwd,cryptoSecret);  //비밀번호 비교
+    await logins.createPassword(id,newPassword,cryptoSecret);    //비밀번호 DB에 저장
+    res.status(200).end();  //비번 변경 성공
+  }
+  catch(err) {
+    res.status(err.status).send({
+      message: err.message
     });
   }
 }
 
 module.exports = {
   login,
-  refresh,
-  password,
+  // refresh,
+  password
 };
