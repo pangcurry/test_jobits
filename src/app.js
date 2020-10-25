@@ -18,8 +18,7 @@ app.set('crypto-secret',process.env.CRYPTO_SECRET);
 sequelize.sync();
 
 app.use('/', require('./routes'));
-app.get("/", (req, res) => { res.send("1")})
 
-app.listen(3000, () => {//3000
+app.listen(port, () => {//3000
   console.log("Server is starting at 3000 port.");
 });
